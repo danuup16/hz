@@ -656,11 +656,22 @@ do
     local clickDelay = 0.1
     local RunService = game:GetService("RunService")
     
-    -- Auto Bring NPC Variables
-    local isAutoBringActive = false
-    local autoBringConnection = nil
-    local bringRange = 50 -- Range to search for NPCs
-    local bringSpeed = 16 -- Speed of bringing NPCs
+    -- Auto Teleport NPC Variables
+    local isAutoTeleportActive = false
+    local autoTeleportConnection = nil
+    local teleportRange = 100
+    local teleportDelay = 0.5
+    local lastTeleportTime = 0
+    
+    -- Farm 1 Variables (CFrame-based Detection)
+    local isFarm1Active = false
+    local farm1Connection = nil
+    local farm1Delay = 1
+    local lastFarm1Time = 0
+    local visitedPositions = {} -- Changed from visitedDoors to visitedPositions
+    local lastDoorRefreshTime = 0
+    local doorRefreshInterval = 5
+    local positionTolerance = 5 -- Distance tolerance for considering positions the same
     
     -- Click Delay Slider
     local ClickDelaySlider = Tabs.Farm:AddSlider("ClickDelaySlider", {
@@ -675,29 +686,42 @@ do
         end
     })
     
-    -- Bring Range Slider
-    local BringRangeSlider = Tabs.Farm:AddSlider("BringRangeSlider", {
-        Title = "Bring Range",
-        Description = "Set range to search for NPCs/Zombies",
-        Default = 50,
+    -- Teleport Range Slider
+    local TeleportRangeSlider = Tabs.Farm:AddSlider("TeleportRangeSlider", {
+        Title = "Teleport Range",
+        Description = "Set range to search for zombie parts",
+        Default = 100,
         Min = 10,
-        Max = 200,
+        Max = 500,
         Rounding = 1,
         Callback = function(Value)
-            bringRange = Value
+            teleportRange = Value
         end
     })
     
-    -- Bring Speed Slider
-    local BringSpeedSlider = Tabs.Farm:AddSlider("BringSpeedSlider", {
-        Title = "Bring Speed",
-        Description = "Set speed of bringing NPCs to you",
-        Default = 16,
-        Min = 1,
-        Max = 50,
+    -- Teleport Delay Slider
+    local TeleportDelaySlider = Tabs.Farm:AddSlider("TeleportDelaySlider", {
+        Title = "Teleport Delay",
+        Description = "Set delay between teleports (seconds)",
+        Default = 0.5,
+        Min = 0.1,
+        Max = 5,
         Rounding = 1,
         Callback = function(Value)
-            bringSpeed = Value
+            teleportDelay = Value
+        end
+    })
+    
+    -- Farm 1 Delay Slider
+    local Farm1DelaySlider = Tabs.Farm:AddSlider("Farm1DelaySlider", {
+        Title = "Farm 1 Delay",
+        Description = "Set delay between door teleports (seconds)",
+        Default = 1,
+        Min = 0.5,
+        Max = 10,
+        Rounding = 1,
+        Callback = function(Value)
+            farm1Delay = Value
         end
     })
     
@@ -713,151 +737,30 @@ do
         end
     end
     
-    -- Find NPCs Function
-    local function findNearbyNPCs()
+    -- Find Zombie Parts in Camera
+    local function findZombieInCamera()
         local player = game.Players.LocalPlayer
         if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-            return {}
+            return nil
         end
         
         local playerPosition = player.Character.HumanoidRootPart.Position
-        local nearbyNPCs = {}
+        local closestZombie = nil
+        local closestDistance = math.huge
         
-        -- Search in workspace for NPCs/Zombies
-        for _, obj in pairs(workspace:GetChildren()) do
-            if obj:IsA("Model") and obj ~= player.Character then
-                -- Check if it's an NPC (has Humanoid and HumanoidRootPart)
-                local humanoid = obj:FindFirstChildOfClass("Humanoid")
-                local rootPart = obj:FindFirstChild("HumanoidRootPart")
-                
-                if humanoid and rootPart then
-                    -- Check if it's not a player
-                    local isPlayer = false
-                    for _, plr in pairs(game.Players:GetPlayers()) do
-                        if plr.Character == obj then
-                            isPlayer = true
-                            break
-                        end
-                    end
+        -- Search in workspace > Camera for zombie parts
+        local camera = workspace:FindFirstChild("Camera")
+        if camera then
+            for _, obj in pairs(camera:GetChildren()) do
+                if obj:IsA("BasePart") then
+                    local entityTeam = obj:GetAttribute("EntityTeam")
                     
-                    if not isPlayer then
-                        local distance = (rootPart.Position - playerPosition).Magnitude
-                        if distance <= bringRange then
-                            table.insert(nearbyNPCs, {model = obj, rootPart = rootPart, distance = distance})
-                        end
-                    end
-                end
-            end
-        end
-        
-        -- Also check in folders that might contain NPCs
-        for _, folder in pairs(workspace:GetChildren()) do
-            if folder:IsA("Folder") then
-                for _, obj in pairs(folder:GetChildren()) do
-                    if obj:IsA("Model") then
-                        local humanoid = obj:FindFirstChildOfClass("Humanoid")
-                        local rootPart = obj:FindFirstChild("HumanoidRootPart")
-                        
-                        if humanoid and rootPart then
-                            local distance = (rootPart.Position - playerPosition).Magnitude
-                            if distance <= bringRange then
-                                table.insert(nearbyNPCs, {model = obj, rootPart = rootPart, distance = distance})
-                            end
-                        end
-                    end
-                end
-            end
-        end
-        
-        return nearbyNPCs
-    end
-    
-    -- Auto Bring NPC Function
-    local function performAutoBring()
-        local player = game.Players.LocalPlayer
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-            return
-        end
-        
-        local playerPosition = player.Character.HumanoidRootPart.Position
-        local npcs = findNearbyNPCs()
-        
-        for _, npcData in pairs(npcs) do
-            local npc = npcData.model
-            local rootPart = npcData.rootPart
-            
-            if npc and npc.Parent and rootPart and rootPart.Parent then
-                -- Create or update BodyVelocity to bring NPC to player
-                local bodyVelocity = rootPart:FindFirstChild("AutoBringVelocity")
-                if not bodyVelocity then
-                    bodyVelocity = Instance.new("BodyVelocity")
-                    bodyVelocity.Name = "AutoBringVelocity"
-                    bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
-                    bodyVelocity.Parent = rootPart
-                end
-                
-                -- Calculate direction to player
-                local direction = (playerPosition - rootPart.Position).Unit
-                bodyVelocity.Velocity = direction * bringSpeed
-                
-                -- Stop NPC from walking away
-                local humanoid = npc:FindFirstChildOfClass("Humanoid")
-                if humanoid then
-                    humanoid.PlatformStand = true
-                    humanoid.WalkSpeed = 0
-                end
-            end
-        end
-    end
-    
-    -- Clean up BodyVelocities when disabled
-    local function cleanupBringEffects()
-        -- Clean from Entities/Zombie folder
-        local entitiesFolder = workspace:FindFirstChild("Entities")
-        if entitiesFolder then
-            local zombieFolder = entitiesFolder:FindFirstChild("Zombie")
-            if zombieFolder then
-                for _, zombie in pairs(zombieFolder:GetChildren()) do
-                    if zombie:IsA("Model") then
-                        local rootPart = zombie:FindFirstChild("HumanoidRootPart") or zombie:FindFirstChild("Torso") or zombie:FindFirstChild("LowerTorso")
-                        if rootPart then
-                            local bodyVelocity = rootPart:FindFirstChild("AutoBringVelocity")
-                            if bodyVelocity then
-                                bodyVelocity:Destroy()
-                            end
-                        end
-                        
-                        -- Reset humanoid
-                        local humanoid = zombie:FindFirstChildOfClass("Humanoid")
-                        if humanoid then
-                            pcall(function()
-                                humanoid.PlatformStand = false
-                                if humanoid.WalkSpeed == 0 then
-                                    humanoid.WalkSpeed = 16
-                                end
-                            end)
-                        end
-                    end
-                end
-            end
-            
-            -- Clean other entities
-            for _, obj in pairs(entitiesFolder:GetChildren()) do
-                if obj:IsA("Model") and obj.Name ~= "Zombie" then
-                    local rootPart = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj:FindFirstChild("LowerTorso")
-                    if rootPart then
-                        local bodyVelocity = rootPart:FindFirstChild("AutoBringVelocity")
-                        if bodyVelocity then
-                            bodyVelocity:Destroy()
-                        end
-                    end
-                    
-                    local humanoid = obj:FindFirstChildOfClass("Humanoid")
-                    if humanoid then
+                    if entityTeam and entityTeam == "Zombie" then
                         pcall(function()
-                            humanoid.PlatformStand = false
-                            if humanoid.WalkSpeed == 0 then
-                                humanoid.WalkSpeed = 16
+                            local distance = (obj.Position - playerPosition).Magnitude
+                            if distance <= teleportRange and distance < closestDistance then
+                                closestDistance = distance
+                                closestZombie = obj
                             end
                         end)
                     end
@@ -865,28 +768,231 @@ do
             end
         end
         
-        -- Fallback cleanup in workspace
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj.Name == "AutoBringVelocity" and obj:IsA("BodyVelocity") then
-                obj:Destroy()
-            end
-        end
+        return closestZombie
     end
     
-    -- Auto Tool Activate Toggle
+    -- Auto Teleport to NPC Function
+    local function performAutoTeleportNPC()
+        local currentTime = tick()
+        if currentTime - lastTeleportTime < teleportDelay then
+            return
+        end
+        
+        local player = game.Players.LocalPlayer
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            return
+        end
+        
+        local zombiePart = findZombieInCamera()
+        if not zombiePart then
+            return
+        end
+        
+        -- Get zombie's current CFrame
+        local zombieCFrame = zombiePart.CFrame
+        local entityID = zombiePart:GetAttribute("EntityID")
+        
+        print("Teleporting to zombie ID:", entityID, "at CFrame:", zombieCFrame)
+        
+        -- Teleport player to zombie location
+        pcall(function()
+            player.Character.HumanoidRootPart.CFrame = zombieCFrame
+            print("Successfully teleported to zombie location")
+        end)
+        
+        lastTeleportTime = currentTime
+    end
+    
+    -- Function to create position key from CFrame
+    local function createPositionKey(cframe)
+        local x, y, z = cframe.X, cframe.Y, cframe.Z
+        -- Round to nearest integer to handle floating point precision
+        return math.floor(x + 0.5) .. "," .. math.floor(y + 0.5) .. "," .. math.floor(z + 0.5)
+    end
+    
+    -- Function to check if position already visited
+    local function isPositionVisited(cframe)
+        local newKey = createPositionKey(cframe)
+        
+        -- Check if exact position already visited
+        if visitedPositions[newKey] then
+            return true
+        end
+        
+        -- Check if any nearby position was visited (within tolerance)
+        for visitedKey, _ in pairs(visitedPositions) do
+            local coords = {}
+            for coord in visitedKey:gmatch("([^,]+)") do
+                table.insert(coords, tonumber(coord))
+            end
+            
+            if #coords == 3 then
+                local visitedPos = Vector3.new(coords[1], coords[2], coords[3])
+                local currentPos = Vector3.new(cframe.X, cframe.Y, cframe.Z)
+                local distance = (visitedPos - currentPos).Magnitude
+                
+                if distance <= positionTolerance then
+                    return true
+                end
+            end
+        end
+        
+        return false
+    end
+    
+    -- Find All HallwayDoor Root Parts and Sort by Distance (CFrame-based)
+    local function findAndSortHallwayDoors()
+        local doorRoots = {}
+        local player = game.Players.LocalPlayer
+        
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            return doorRoots
+        end
+        
+        local playerPosition = player.Character.HumanoidRootPart.Position
+        
+        -- Search specifically in workspace > School > Doors
+        local school = workspace:FindFirstChild("School")
+        if school then
+            local doors = school:FindFirstChild("Doors")
+            if doors then
+                local doorCount = 1
+                for _, obj in pairs(doors:GetChildren()) do
+                    if obj.Name:match("HallwayDoor") and obj:IsA("Model") then
+                        local root = obj:FindFirstChild("Root")
+                        if root and root:IsA("BasePart") then
+                            local distance = (root.Position - playerPosition).Magnitude
+                            local positionKey = createPositionKey(root.CFrame)
+                            local visited = isPositionVisited(root.CFrame)
+                            
+                            table.insert(doorRoots, {
+                                name = obj.Name .. "_" .. doorCount, -- Add unique suffix for display
+                                root = root,
+                                position = root.Position,
+                                cframe = root.CFrame,
+                                distance = distance,
+                                positionKey = positionKey,
+                                visited = visited
+                            })
+                            
+                            print("Found HallwayDoor #" .. doorCount .. ":", obj.Name, 
+                                  "at position:", math.floor(root.Position.X), math.floor(root.Position.Y), math.floor(root.Position.Z), 
+                                  "distance:", math.floor(distance), 
+                                  "visited:", visited and "YES" or "NO")
+                            
+                            doorCount = doorCount + 1
+                        end
+                    end
+                end
+            else
+                print("Doors folder not found in School")
+            end
+        else
+            print("School folder not found in workspace")
+        end
+        
+        -- Sort doors by distance (closest first)
+        table.sort(doorRoots, function(a, b)
+            return a.distance < b.distance
+        end)
+        
+        print("Total HallwayDoors found and sorted:", #doorRoots)
+        
+        -- Print sorted order with better debugging
+        for i, door in ipairs(doorRoots) do
+            local visitedStatus = door.visited and "VISITED" or "NOT VISITED"
+            print("Door " .. i .. ":", door.name, "distance:", math.floor(door.distance), 
+                  "pos:", door.positionKey, visitedStatus)
+        end
+        
+        return doorRoots
+    end
+    
+    -- Farm 1 Teleport Function (Keep Toggle ON, Stop Function Only)
+    local function performFarm1Teleport()
+        local currentTime = tick()
+        if currentTime - lastFarm1Time < farm1Delay then
+            return
+        end
+        
+        local player = game.Players.LocalPlayer
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            return
+        end
+        
+        -- Get all doors with updated visit status
+        local allDoors = findAndSortHallwayDoors()
+        
+        if #allDoors == 0 then
+            print("No doors found!")
+            return
+        end
+        
+        -- Count visited doors properly
+        local visitedCount = 0
+        local unvisitedDoors = {}
+        
+        for _, door in ipairs(allDoors) do
+            if door.visited then
+                visitedCount = visitedCount + 1
+            else
+                table.insert(unvisitedDoors, door)
+            end
+        end
+        if visitedCount >= #allDoors then
+            if farm1Connection then
+                farm1Connection:Disconnect()
+                farm1Connection = nil
+                print("Farm 1 processing stopped, but toggle stays ON")
+            end
+            wait(1)
+            if not isAutoTeleportActive and Options.AutoTeleportToggle then
+                Options.AutoTeleportToggle:SetValue(true)
+                print("Auto Teleport NPC enabled automatically")
+            end
+            if not isAutoClickActive and Options.AutoClickToggle then
+                Options.AutoClickToggle:SetValue(true) 
+                print("Auto Tool Activate enabled automatically")
+            end
+            Fluent:Notify({
+                Title = "Farm 1 Complete - Auto Transition",
+                Content = "All " .. #allDoors .. " doors visited! Farm 1 toggle stays ON. Auto farming enabled.",
+                Duration = 5
+            })
+            return
+        end
+        local targetDoor = unvisitedDoors[1]
+        if not targetDoor then
+            return
+        end
+        local doorIndex = 1
+        for i, door in ipairs(allDoors) do
+            if door.positionKey == targetDoor.positionKey then
+                doorIndex = i
+                break
+            end
+        end
+        pcall(function()
+            player.Character.HumanoidRootPart.CFrame = targetDoor.cframe
+            visitedPositions[targetDoor.positionKey] = true
+            local newVisitedCount = visitedCount + 1
+            Fluent:Notify({
+                Title = "Farm 1 Progress",
+                Content = "Door " .. doorIndex .. "/" .. #allDoors .. " completed. " .. (#allDoors - newVisitedCount) .. " remaining.",
+                Duration = 2
+            })
+        end)
+        lastFarm1Time = currentTime
+    end
     local AutoClickToggle = Tabs.Farm:AddToggle("AutoClickToggle", {
         Title = "Auto Tool Activate",
         Description = "Automatically activate equipped tool",
         Default = false,
         Callback = function(Value)
-            print("🎛️ [DEBUG] Auto Tool Activate toggled:", Value)
             isAutoClickActive = Value
             
             if Value then
-                print("▶️ [DEBUG] Starting auto tool activation")
-                
                 if autoClickConnection then
-                    print("🔄 [DEBUG] Disconnecting existing connection")
                     autoClickConnection:Disconnect()
                     autoClickConnection = nil
                 end
@@ -894,7 +1000,6 @@ do
                 local lastActivateTime = 0
                 autoClickConnection = RunService.Heartbeat:Connect(function()
                     if not isAutoClickActive then
-                        print("⏹️ [DEBUG] Auto click deactivated, cleaning up connection")
                         if autoClickConnection then
                             autoClickConnection:Disconnect()
                             autoClickConnection = nil
@@ -908,98 +1013,110 @@ do
                         lastActivateTime = currentTime
                     end
                 end)
-                
-                print("✅ [sdaasdas")
             else
-                print("⏹️ [DEBUG] Stopping auto tool activation")
                 isAutoClickActive = false
                 if autoClickConnection then
                     autoClickConnection:Disconnect()
                     autoClickConnection = nil
-                    print("✅ [DEBUG] Auto tool activation connection disconnected")
                 end
             end
         end
     })
     
-    -- Auto Bring NPC Toggle
-    local AutoBringToggle = Tabs.Farm:AddToggle("AutoBringToggle", {
-        Title = "Auto Bring NPC",
-        Description = "Automatically bring nearby NPCs/Zombies to you",
+    -- Farm 1 Toggle (Keep Toggle ON when complete)
+    local Farm1Toggle = Tabs.Farm:AddToggle("Farm1Toggle", {
+        Title = "Farm 1 - Door Teleport (Auto)",
+        Description = "Visit all doors, then auto-enable farming (toggle stays ON when done)",
         Default = false,
         Callback = function(Value)
-            print("🎛️ [DEBUG] Auto Bring NPC toggled:", Value)
-            isAutoBringActive = Value
+            print("Farm 1 (Keep Toggle ON) toggled:", Value)
+            isFarm1Active = Value
             
             if Value then
-                print("▶️ [DEBUG] Starting auto bring NPC")
+                print("Starting Farm 1 - Door Teleport with Auto Transition")
                 
-                if autoBringConnection then
-                    print("🔄 [DEBUG] Disconnecting existing bring connection")
-                    autoBringConnection:Disconnect()
-                    autoBringConnection = nil
+                -- Reset all state for new session
+                visitedPositions = {}
+                lastDoorRefreshTime = 0
+                
+                if farm1Connection then
+                    farm1Connection:Disconnect()
+                    farm1Connection = nil
                 end
                 
-                local bringCount = 0
-                autoBringConnection = RunService.Heartbeat:Connect(function()
-                    if not isAutoBringActive then
-                        print("⏹️ [DEBUG] Auto bring deactivated, cleaning up connection")
-                        if autoBringConnection then
-                            autoBringConnection:Disconnect()
-                            autoBringConnection = nil
+                farm1Connection = RunService.Heartbeat:Connect(function()
+                    if not isFarm1Active then
+                        if farm1Connection then
+                            farm1Connection:Disconnect()
+                            farm1Connection = nil
                         end
                         return
                     end
                     
-                    bringCount = bringCount + 1
-                    if bringCount % 30 == 0 then -- Log every 30 frames to avoid spam
-                        print("🔄 [DEBUG] Auto bring running - Frame:", bringCount)
-                    end
-                    
-                    performAutoBring()
+                    performFarm1Teleport()
                 end)
                 
-                print("✅ [DEBUG] Auto bring NPC connection established")
+                print("Farm 1 (Keep Toggle ON) connection established")
+                
+                Fluent:Notify({
+                    Title = "Farm 1 Started",
+                    Content = "Will auto-enable zombie farming after visiting all doors! Toggle will stay ON when complete.",
+                    Duration = 3
+                })
             else
-                print("⏹️ [DEBUG] Stopping auto bring NPC")
-                isAutoBringActive = false
-                if autoBringConnection then
-                    autoBringConnection:Disconnect()
-                    autoBringConnection = nil
-                    print("✅ [DEBUG] Auto bring NPC connection disconnected")
+                print("Stopping Farm 1")
+                isFarm1Active = false
+                if farm1Connection then
+                    farm1Connection:Disconnect()
+                    farm1Connection = nil
+                    Options.AutoTeleportToggle:SetValue(false)
+                    Options.AutoClickToggle:SetValue(false)
+                    print("Farm 1 connection disconnected")
                 end
-                cleanupBringEffects()
+                visitedPositions = {}
+                lastDoorRefreshTime = 0
             end
         end
     })
-    
-    -- NPC Counter Display
-    spawn(function()
-        while true do
-            if isAutoBringActive then
-                local npcCount = #findNearbyNPCs()
-                -- You can add notification or update UI here if needed
+    local AutoTeleportToggle = Tabs.Farm:AddToggle("AutoTeleportToggle", {
+        Title = "Auto Teleport NPC",
+        Description = "Automatically teleport to nearest zombie part",
+        Default = false,
+        Callback = function(Value)
+            print("Auto Teleport NPC toggled:", Value)
+            isAutoTeleportActive = Value
+            
+            if Value then
+                print("Starting auto teleport to zombie NPCs")
+                
+                if autoTeleportConnection then
+                    autoTeleportConnection:Disconnect()
+                    autoTeleportConnection = nil
+                end
+                
+                autoTeleportConnection = RunService.Heartbeat:Connect(function()
+                    if not isAutoTeleportActive then
+                        if autoTeleportConnection then
+                            autoTeleportConnection:Disconnect()
+                            autoTeleportConnection = nil
+                        end
+                        return
+                    end
+                    
+                    performAutoTeleportNPC()
+                end)
+                
+                print("Auto teleport connection established")
+            else
+                print("Stopping auto teleport")
+                isAutoTeleportActive = false
+                if autoTeleportConnection then
+                    autoTeleportConnection:Disconnect()
+                    autoTeleportConnection = nil
+                    print("Auto teleport connection disconnected")
+                end
             end
-            wait(1)
         end
-    end)
-    
-    -- Info text for Farm tab
-    Tabs.Farm:AddParagraph({
-        Title = "Auto Farming Features",
-        Content = "Auto Tool Activate: Automatically activates equipped tools (weapons, etc.)\n\nAuto Teleport to Zombie: Teleports player to the nearest zombie location based on their changing CFrame positions."
-    })
-    
-    -- Usage Instructions
-    Tabs.Farm:AddParagraph({
-        Title = "How to Use",
-        Content = "Auto Tool:\n1. Equip your weapon/tool\n2. Set click delay\n3. Toggle Auto Tool Activate\n\nAuto Teleport:\n1. Set teleport range (search distance)\n2. Set teleport delay (cooldown between teleports)\n3. Toggle Auto Teleport to Zombie\n4. You will be teleported to nearest zombie automatically!"
-    })
-    
-    -- Warning
-    Tabs.Farm:AddParagraph({
-        Title = "⚠️ Important Notes",
-        Content = "• Auto Teleport follows zombie CFrame changes in real-time\n• Player teleports to zombie location (not zombie to player)\n• Uses delay to prevent teleport spam\n• Targets closest zombie with EntityTeam='Zombie'\n• CFrame tracking updates constantly"
     })
 end
 Window:SelectTab(1)
