@@ -840,149 +840,167 @@ do
     end
     
     -- Find All HallwayDoor Root Parts and Sort by Distance (CFrame-based)
-    local function findAndSortHallwayDoors()
-        local doorRoots = {}
-        local player = game.Players.LocalPlayer
-        
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-            return doorRoots
-        end
-        
-        local playerPosition = player.Character.HumanoidRootPart.Position
-        
-        -- Search specifically in workspace > School > Doors
-        local school = workspace:FindFirstChild("School")
-        if school then
-            local doors = school:FindFirstChild("Doors")
-            if doors then
-                local doorCount = 1
-                for _, obj in pairs(doors:GetChildren()) do
-                    if obj.Name:match("HallwayDoor") and obj:IsA("Model") then
-                        local root = obj:FindFirstChild("Root")
-                        if root and root:IsA("BasePart") then
-                            local distance = (root.Position - playerPosition).Magnitude
-                            local positionKey = createPositionKey(root.CFrame)
-                            local visited = isPositionVisited(root.CFrame)
-                            
-                            table.insert(doorRoots, {
-                                name = obj.Name .. "_" .. doorCount, -- Add unique suffix for display
-                                root = root,
-                                position = root.Position,
-                                cframe = root.CFrame,
-                                distance = distance,
-                                positionKey = positionKey,
-                                visited = visited
-                            })
-                            
-                            print("Found HallwayDoor #" .. doorCount .. ":", obj.Name, 
-                                  "at position:", math.floor(root.Position.X), math.floor(root.Position.Y), math.floor(root.Position.Z), 
-                                  "distance:", math.floor(distance), 
-                                  "visited:", visited and "YES" or "NO")
-                            
-                            doorCount = doorCount + 1
-                        end
-                    end
-                end
-            else
-                print("Doors folder not found in School")
-            end
-        else
-            print("School folder not found in workspace")
-        end
-        
-        -- Sort doors by distance (closest first)
-        table.sort(doorRoots, function(a, b)
-            return a.distance < b.distance
-        end)
-        
-        print("Total HallwayDoors found and sorted:", #doorRoots)
-        
-        -- Print sorted order with better debugging
-        for i, door in ipairs(doorRoots) do
-            local visitedStatus = door.visited and "VISITED" or "NOT VISITED"
-            print("Door " .. i .. ":", door.name, "distance:", math.floor(door.distance), 
-                  "pos:", door.positionKey, visitedStatus)
-        end
-        
+    -- Fix for the type comparison error in performFarm1Teleport function
+
+-- Replace the findAndSortHallwayDoors function with this version that ensures type safety:
+local function findAndSortHallwayDoors()
+    local doorRoots = {}
+    local player = game.Players.LocalPlayer
+    
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
         return doorRoots
     end
     
-    -- Farm 1 Teleport Function (Keep Toggle ON, Stop Function Only)
-    local function performFarm1Teleport()
-        local currentTime = tick()
-        if currentTime - lastFarm1Time < farm1Delay then
-            return
-        end
-        
-        local player = game.Players.LocalPlayer
-        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
-            return
-        end
-        
-        -- Get all doors with updated visit status
-        local allDoors = findAndSortHallwayDoors()
-        
-        if #allDoors == 0 then
-            print("No doors found!")
-            return
-        end
-        
-        -- Count visited doors properly
-        local visitedCount = 0
-        local unvisitedDoors = {}
-        
-        for _, door in ipairs(allDoors) do
-            if door.visited then
-                visitedCount = visitedCount + 1
-            else
-                table.insert(unvisitedDoors, door)
+    local playerPosition = player.Character.HumanoidRootPart.Position
+    
+    -- Search specifically in workspace > School > Doors
+    local school = workspace:FindFirstChild("School")
+    if school then
+        local doors = school:FindFirstChild("Doors")
+        if doors then
+            local doorCount = 1
+            for _, obj in pairs(doors:GetChildren()) do
+                if obj.Name:match("HallwayDoor") and obj:IsA("Model") then
+                    local root = obj:FindFirstChild("Root")
+                    if root and root:IsA("BasePart") then
+                        -- Ensure distance is always a number
+                        local distance = tonumber((root.Position - playerPosition).Magnitude) or 0
+                        local positionKey = createPositionKey(root.CFrame)
+                        local visited = isPositionVisited(root.CFrame)
+                        
+                        table.insert(doorRoots, {
+                            name = obj.Name .. "_" .. doorCount,
+                            root = root,
+                            position = root.Position,
+                            cframe = root.CFrame,
+                            distance = distance, -- Guaranteed to be a number
+                            positionKey = positionKey,
+                            visited = visited
+                        })
+                        
+                        print("Found HallwayDoor #" .. doorCount .. ":", obj.Name, 
+                              "at position:", math.floor(root.Position.X), math.floor(root.Position.Y), math.floor(root.Position.Z), 
+                              "distance:", math.floor(distance), 
+                              "visited:", visited and "YES" or "NO")
+                        
+                        doorCount = doorCount + 1
+                    end
+                end
             end
+        else
+            print("Doors folder not found in School")
         end
-        if visitedCount >= #allDoors then
-            if farm1Connection then
-                farm1Connection:Disconnect()
-                farm1Connection = nil
-                print("Farm 1 processing stopped, but toggle stays ON")
-            end
-            wait(1)
-            if not isAutoTeleportActive and Options.AutoTeleportToggle then
-                Options.AutoTeleportToggle:SetValue(true)
-                print("Auto Teleport NPC enabled automatically")
-            end
-            if not isAutoClickActive and Options.AutoClickToggle then
-                Options.AutoClickToggle:SetValue(true) 
-                print("Auto Tool Activate enabled automatically")
-            end
-            Fluent:Notify({
-                Title = "Farm 1 Complete - Auto Transition",
-                Content = "All " .. #allDoors .. " doors visited! Farm 1 toggle stays ON. Auto farming enabled.",
-                Duration = 5
-            })
-            return
-        end
-        local targetDoor = unvisitedDoors[1]
-        if not targetDoor then
-            return
-        end
-        local doorIndex = 1
-        for i, door in ipairs(allDoors) do
-            if door.positionKey == targetDoor.positionKey then
-                doorIndex = i
-                break
-            end
-        end
-        pcall(function()
-            player.Character.HumanoidRootPart.CFrame = targetDoor.cframe
-            visitedPositions[targetDoor.positionKey] = true
-            local newVisitedCount = visitedCount + 1
-            Fluent:Notify({
-                Title = "Farm 1 Progress",
-                Content = "Door " .. doorIndex .. "/" .. #allDoors .. " completed. " .. (#allDoors - newVisitedCount) .. " remaining.",
-                Duration = 2
-            })
-        end)
-        lastFarm1Time = currentTime
+    else
+        print("School folder not found in workspace")
     end
+    
+    -- Sort doors by distance with type checking
+    table.sort(doorRoots, function(a, b)
+        -- Ensure both distances are numbers before comparing
+        local distA = tonumber(a.distance) or 0
+        local distB = tonumber(b.distance) or 0
+        return distA < distB
+    end)
+    
+    print("Total HallwayDoors found and sorted:", #doorRoots)
+    
+    -- Print sorted order with better debugging
+    for i, door in ipairs(doorRoots) do
+        local visitedStatus = door.visited and "VISITED" or "NOT VISITED"
+        local safeDistance = tonumber(door.distance) or 0
+        print("Door " .. i .. ":", door.name, "distance:", math.floor(safeDistance), 
+              "pos:", door.positionKey, visitedStatus)
+    end
+    
+    return doorRoots
+end
+
+-- Also update the performFarm1Teleport function with better type safety:
+local function performFarm1Teleport()
+    local currentTime = tick()
+    if currentTime - lastFarm1Time < farm1Delay then
+        return
+    end
+    
+    local player = game.Players.LocalPlayer
+    if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+        return
+    end
+    
+    -- Get all doors with updated visit status
+    local allDoors = findAndSortHallwayDoors()
+    
+    if #allDoors == 0 then
+        print("No doors found!")
+        return
+    end
+    
+    -- Count visited doors properly with type safety
+    local visitedCount = 0
+    local unvisitedDoors = {}
+    
+    for _, door in ipairs(allDoors) do
+        if door.visited == true then -- explicit boolean check
+            visitedCount = visitedCount + 1
+        else
+            table.insert(unvisitedDoors, door)
+        end
+    end
+    
+    -- Ensure we're comparing numbers
+    local totalDoors = tonumber(#allDoors) or 0
+    local visitedNum = tonumber(visitedCount) or 0
+    
+    if visitedNum >= totalDoors then
+        if farm1Connection then
+            farm1Connection:Disconnect()
+            farm1Connection = nil
+            print("Farm 1 processing stopped, but toggle stays ON")
+        end
+        wait(1)
+        if not isAutoTeleportActive and Options.AutoTeleportToggle then
+            Options.AutoTeleportToggle:SetValue(true)
+            print("Auto Teleport NPC enabled automatically")
+        end
+        if not isAutoClickActive and Options.AutoClickToggle then
+            Options.AutoClickToggle:SetValue(true) 
+            print("Auto Tool Activate enabled automatically")
+        end
+        Fluent:Notify({
+            Title = "Farm 1 Complete - Auto Transition",
+            Content = "All " .. totalDoors .. " doors visited! Farm 1 toggle stays ON. Auto farming enabled.",
+            Duration = 5
+        })
+        return
+    end
+    
+    local targetDoor = unvisitedDoors[1]
+    if not targetDoor then
+        return
+    end
+    
+    local doorIndex = 1
+    for i, door in ipairs(allDoors) do
+        if door.positionKey == targetDoor.positionKey then
+            doorIndex = i
+            break
+        end
+    end
+    
+    pcall(function()
+        player.Character.HumanoidRootPart.CFrame = targetDoor.cframe
+        visitedPositions[targetDoor.positionKey] = true
+        local newVisitedCount = visitedNum + 1
+        local remaining = totalDoors - newVisitedCount
+        Fluent:Notify({
+            Title = "Farm 1 Progress",
+            Content = "Door " .. doorIndex .. "/" .. totalDoors .. " completed. " .. remaining .. " remaining.",
+            Duration = 2
+        })
+    end)
+    
+    lastFarm1Time = currentTime
+end
     local AutoClickToggle = Tabs.Farm:AddToggle("AutoClickToggle", {
         Title = "Auto Tool Activate",
         Description = "Automatically activate equipped tool",
