@@ -1073,11 +1073,15 @@ do
                     Options.AutoClickToggle:SetValue(false)
                     print("Farm 1 connection disconnected")
                 end
+                
+                -- Reset state when manually turned off
                 visitedPositions = {}
                 lastDoorRefreshTime = 0
             end
         end
     })
+    
+    -- Auto Teleport NPC Toggle
     local AutoTeleportToggle = Tabs.Farm:AddToggle("AutoTeleportToggle", {
         Title = "Auto Teleport NPC",
         Description = "Automatically teleport to nearest zombie part",
