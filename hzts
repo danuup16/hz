@@ -1,0 +1,982 @@
+local Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/danuup16/mnbru/refs/heads/main/mnu"))()
+local HttpService = game:GetService("HttpService")
+
+local AutoConfig = {} do
+    AutoConfig.FolderName = "DJSTest"
+    AutoConfig.ConfigFile = "DJShz.json"
+    AutoConfig.Library = nil
+    AutoConfig.LastSaveTime = 0
+    AutoConfig.IsMonitoring = false
+    AutoConfig.Parsers = {
+        Toggle = {
+            Save = function(idx, option) 
+                return { type = "Toggle", idx = idx, value = option.Value } 
+            end,
+            Load = function(idx, data, options)
+                if options[idx] then 
+                    options[idx]:SetValue(data.value)
+                end
+            end,
+        },
+        Slider = {
+            Save = function(idx, option)
+                return { type = "Slider", idx = idx, value = tonumber(option.Value) }
+            end,
+            Load = function(idx, data, options)
+                if options[idx] then 
+                    options[idx]:SetValue(data.value)
+                end
+            end,
+        },
+        Dropdown = {
+            Save = function(idx, option)
+                return { type = "Dropdown", idx = idx, value = option.Value, multi = option.Multi }
+            end,
+            Load = function(idx, data, options)
+                if options[idx] then 
+                    options[idx]:SetValue(data.value)
+                end
+            end,
+        },
+        Colorpicker = {
+            Save = function(idx, option)
+                return { type = "Colorpicker", idx = idx, value = option.Value:ToHex(), transparency = option.Transparency }
+            end,
+            Load = function(idx, data, options)
+                if options[idx] then 
+                    options[idx]:SetValueRGB(Color3.fromHex(data.value), data.transparency)
+                end
+            end,
+        },
+        Input = {
+            Save = function(idx, option)
+                return { type = "Input", idx = idx, text = option.Value }
+            end,
+            Load = function(idx, data, options)
+                if options[idx] and type(data.text) == "string" then
+                    options[idx]:SetValue(data.text)
+                end
+            end,
+        },
+    }
+    
+    function AutoConfig:Initialize(library)
+        self.Library = library
+        self:CreateFolders()
+        wait(2) 
+        self:LoadConfig()
+        self:StartChangeMonitoring()
+    end
+    
+    function AutoConfig:CreateFolders()
+        if not isfolder(self.FolderName) then
+            makefolder(self.FolderName)
+        end
+    end
+    
+    function AutoConfig:GetFilePath()
+        return self.FolderName .. "/" .. self.ConfigFile
+    end
+    
+    function AutoConfig:SaveConfig()
+        local data = { objects = {} }
+        
+        for idx, option in pairs(self.Library.Options) do
+            local parser = self.Parsers[option.Type]
+            if parser then
+                table.insert(data.objects, parser.Save(idx, option))
+            end
+        end
+        
+        local success, encoded = pcall(HttpService.JSONEncode, HttpService, data)
+        if success then
+            writefile(self:GetFilePath(), encoded)
+            self.LastSaveTime = tick()
+            return true, "Config saved successfully"
+        else
+            return false, "Failed to encode config data"
+        end
+    end
+    
+    function AutoConfig:LoadConfig()
+        local filePath = self:GetFilePath()
+        
+        if not isfile(filePath) then
+            return false, "No config file found"
+        end
+        
+        local success, decoded = pcall(HttpService.JSONDecode, HttpService, readfile(filePath))
+        if not success then
+            return false, "Failed to decode config"
+        end
+        
+        for _, item in pairs(decoded.objects) do
+            local parser = self.Parsers[item.type]
+            if parser then
+                spawn(function()
+                    parser.Load(item.idx, item, self.Library.Options)
+                end)
+            end
+        end
+        return true, "Config loaded successfully"
+    end
+    
+    function AutoConfig:StartChangeMonitoring()
+        if self.IsMonitoring then return end
+        self.IsMonitoring = true
+        local lastValues = {}
+        for idx, option in pairs(self.Library.Options) do
+            lastValues[idx] = self:GetOptionValue(option)
+        end
+        
+        spawn(function()
+            while self.IsMonitoring do
+                wait(0.5)
+                
+                local hasChanges = false
+                for idx, option in pairs(self.Library.Options) do
+                    local currentValue = self:GetOptionValue(option)
+                    if self:ValuesAreDifferent(lastValues[idx], currentValue) then
+                        lastValues[idx] = currentValue
+                        hasChanges = true
+                    end
+                end
+                
+                if hasChanges then
+                    local success, msg = self:SaveConfig()
+                    if success then
+                    end
+                end
+            end
+        end)
+    end
+    
+    function AutoConfig:GetOptionValue(option)
+        if option.Type == "Toggle" then
+            return option.Value
+        elseif option.Type == "Slider" then
+            return option.Value
+        elseif option.Type == "Dropdown" then
+            return option.Value
+        elseif option.Type == "Input" then
+            return option.Value
+        elseif option.Type == "Colorpicker" then
+            return {option.Value:ToHex(), option.Transparency}
+        end
+        return nil
+    end
+    
+    function AutoConfig:ValuesAreDifferent(oldValue, newValue)
+        if type(oldValue) ~= type(newValue) then
+            return true
+        end
+        
+        if type(oldValue) == "table" then
+            if #oldValue ~= #newValue then return true end
+            for i = 1, #oldValue do
+                if oldValue[i] ~= newValue[i] then return true end
+            end
+            return false
+        end
+        
+        return oldValue ~= newValue
+    end
+    
+    function AutoConfig:StopMonitoring()
+        self.IsMonitoring = false
+    end
+    
+    function AutoConfig:ManualSave()
+        return self:SaveConfig()
+    end
+    
+    function AutoConfig:GetLastSaveTime()
+        return self.LastSaveTime
+    end
+end
+
+local Window = Fluent:CreateWindow({
+    Title = "#DJSTEST - Hunty Zombie v.0.1 ",
+    SubTitle = "",
+    TabWidth = 160,
+    Size = UDim2.fromOffset(650, 400),
+    Transparency = true,
+    Theme = "Dark",
+    MinimizeKey = Enum.KeyCode.F
+})
+
+local Tabs = {
+    Info = Window:AddTab({ Title = "Info Script", Icon = "info" }),
+    Player = Window:AddTab({ Title = "Player", Icon = "user-cog" }),
+    Farm = Window:AddTab({ Title = "Farm", Icon = "zap" })
+}
+
+local Options = Fluent.Options
+
+-- Variables for character setup
+local defaultWalkSpeed = 16
+local defaultJumpPower = 16
+local isWalkSpeedActive = false
+local currentWalkSpeed = 50
+
+-- Character setup function
+local function setupCharacter()
+    local player = game.Players.LocalPlayer
+    if player.Character and player.Character:FindFirstChild("Humanoid") then
+        local humanoid = player.Character.Humanoid
+        if not Options.WalkSpeedSlider then
+            defaultWalkSpeed = humanoid.WalkSpeed
+        end
+        if not Options.JumpHeightSlider then
+            defaultJumpPower = humanoid.JumpPower
+        end
+        
+        -- Apply walk speed based on toggle state
+        if isWalkSpeedActive and Options.WalkSpeedSlider then
+            humanoid.WalkSpeed = Options.WalkSpeedSlider.Value or currentWalkSpeed
+        else
+            humanoid.WalkSpeed = defaultWalkSpeed
+        end
+        
+        if Options.JumpHeightSlider then
+            humanoid.JumpPower = Options.JumpHeightSlider.Value or defaultJumpPower
+        end
+    end
+end
+
+game.Players.LocalPlayer.CharacterAdded:Connect(setupCharacter)
+if game.Players.LocalPlayer.Character then
+    setupCharacter()
+end
+
+-- Info Tab
+do
+    Tabs.Info:AddButton({
+        Title = "Discord Server",
+        Description = "Discord invite link",
+        Callback = function()
+            setclipboard("https://discord.gg/uwXYuxj6cF")
+        end
+    })
+    
+    Tabs.Info:AddButton({
+        Title = "Tiktok",
+        Description = "Tiktok profile link",
+        Callback = function()
+            setclipboard("https://www.tiktok.com/@daanujs_")
+        end
+    })
+end
+
+-- Player Tab
+do
+    -- Walk Speed Slider
+    local WalkSpeedSlider = Tabs.Player:AddSlider("WalkSpeedSlider", {
+        Title = "Walk Speed",
+        Description = "Control your walking speed",
+        Default = 50,
+        Min = 16,
+        Max = 100,
+        Rounding = 1,
+        Callback = function(Value)
+            currentWalkSpeed = Value
+            -- Only apply if toggle is active
+            if isWalkSpeedActive then
+                local player = game.Players.LocalPlayer
+                if player.Character and player.Character:FindFirstChild("Humanoid") then
+                    player.Character.Humanoid.WalkSpeed = Value
+                end
+            end
+        end
+    })
+    
+    -- Jump Height
+    local JumpHeightSlider = Tabs.Player:AddSlider("JumpHeightSlider", {
+        Title = "Jump Height",
+        Description = "Control your jumping power",
+        Default = defaultJumpPower,
+        Min = 0,
+        Max = 500,
+        Rounding = 1,
+        Callback = function(Value)
+            local player = game.Players.LocalPlayer
+            if player.Character and player.Character:FindFirstChild("Humanoid") then
+                player.Character.Humanoid.JumpPower = Value
+            end
+        end
+    })
+    
+    -- Fly variables and functions
+    local flyBodyVelocity = nil
+    local flyBodyPosition = nil
+    local isFlyActive = false
+    local flySpeed = 50
+    
+    local FlySpeedSlider = Tabs.Player:AddSlider("FlySpeedSlider", {
+        Title = "Fly Speed",
+        Description = "Control your flying speed",
+        Default = flySpeed,
+        Min = 10,
+        Max = 1000,
+        Rounding = 5,
+        Callback = function(Value)
+            flySpeed = Value
+        end
+    })
+    
+    local function enableFly()
+        local player = game.Players.LocalPlayer
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            return false
+        end
+        local humanoidRootPart = player.Character.HumanoidRootPart
+        flyBodyVelocity = Instance.new("BodyVelocity")
+        flyBodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+        flyBodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        flyBodyVelocity.Parent = humanoidRootPart
+        flyBodyPosition = Instance.new("BodyPosition")
+        flyBodyPosition.MaxForce = Vector3.new(4000, 4000, 4000)
+        flyBodyPosition.Position = humanoidRootPart.Position
+        flyBodyPosition.Parent = humanoidRootPart
+        return true
+    end
+    
+    local function disableFly()
+        if flyBodyVelocity then
+            flyBodyVelocity:Destroy()
+            flyBodyVelocity = nil
+        end
+        if flyBodyPosition then
+            flyBodyPosition:Destroy()
+            flyBodyPosition = nil
+        end
+    end
+    
+    local function updateFlyMovement()
+        local player = game.Players.LocalPlayer
+        local camera = workspace.CurrentCamera
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            return
+        end
+        local humanoidRootPart = player.Character.HumanoidRootPart
+        local humanoid = player.Character:FindFirstChild("Humanoid")
+        if not flyBodyVelocity or not flyBodyPosition or not humanoid then
+            return
+        end
+        local moveVector = humanoid.MoveDirection
+        local velocity = Vector3.new(0, 0, 0)
+        if moveVector.Magnitude > 0 then
+            local cameraDirection = camera.CFrame.LookVector
+            local flatDirection = Vector3.new(cameraDirection.X, 0, cameraDirection.Z).Unit
+            velocity = flatDirection * moveVector.Magnitude * flySpeed
+        end
+        local userInputService = game:GetService("UserInputService")
+        if userInputService:IsKeyDown(Enum.KeyCode.Space) then
+            velocity = velocity + Vector3.new(0, flySpeed, 0)
+        end
+        if userInputService:IsKeyDown(Enum.KeyCode.LeftShift) then
+            velocity = velocity + Vector3.new(0, -flySpeed, 0)
+        end
+        flyBodyVelocity.Velocity = velocity
+        if velocity.Magnitude == 0 then
+            flyBodyPosition.Position = humanoidRootPart.Position
+        else
+            flyBodyPosition.Position = humanoidRootPart.Position + velocity * 0.1
+        end
+    end
+     -- Walk Speed Toggle
+    local WalkSpeedToggle = Tabs.Player:AddToggle("WalkSpeedToggle", {
+        Title = "Walk Speed",
+        Description = "Enable custom walk speed",
+        Default = false,
+        Callback = function(Value)
+            isWalkSpeedActive = Value
+            local player = game.Players.LocalPlayer
+            if player.Character and player.Character:FindFirstChild("Humanoid") then
+                if Value then
+                    player.Character.Humanoid.WalkSpeed = currentWalkSpeed
+                else
+                    player.Character.Humanoid.WalkSpeed = defaultWalkSpeed
+                end
+            end
+        end
+    })
+    local flyToggle = Tabs.Player:AddToggle("FlyToggle", {
+        Title = "Fly",
+        Description = "Enable flying mode",
+        Default = false,
+        Callback = function(Value)
+            if Value then
+                if not isFlyActive then
+                    if enableFly() then
+                        isFlyActive = true
+                        spawn(function()
+                            while isFlyActive do
+                                updateFlyMovement()
+                                game:GetService("RunService").Heartbeat:Wait()
+                            end
+                        end)
+                    end
+                end
+            else
+                if isFlyActive then
+                    isFlyActive = false
+                    disableFly()
+                end
+            end
+        end
+    })
+    
+    -- Infinite Jump
+    local infiniteJumpConnection = nil
+    local isInfiniteJumpActive = false
+    
+    local function enableInfiniteJump()
+        if infiniteJumpConnection then
+            infiniteJumpConnection:Disconnect()
+        end
+        infiniteJumpConnection = game:GetService("UserInputService").JumpRequest:Connect(function()
+            local player = game.Players.LocalPlayer
+            if player.Character and player.Character:FindFirstChild("Humanoid") then
+                player.Character.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end)
+    end
+    
+    local function disableInfiniteJump()
+        if infiniteJumpConnection then
+            infiniteJumpConnection:Disconnect()
+            infiniteJumpConnection = nil
+        end
+    end
+    
+    local infiniteJump = Tabs.Player:AddToggle("InfiniteJump", {
+        Title = "Infinite Jump",
+        Description = "Jump infinitely without touching ground",
+        Default = false,
+        Callback = function(Value)
+            if Value then
+                if not isInfiniteJumpActive then
+                    enableInfiniteJump()
+                    isInfiniteJumpActive = true
+                end
+            else
+                if isInfiniteJumpActive then
+                    disableInfiniteJump()
+                    isInfiniteJumpActive = false
+                end
+            end
+        end
+    })
+    
+    -- No Clip
+    local isNoclipActive = false
+    local noclipConnection = nil
+    local RunService = game:GetService("RunService")
+    
+    local function enableNoclip()
+        local player = game.Players.LocalPlayer
+        if not player.Character then
+            return false
+        end
+        if noclipConnection then
+            noclipConnection:Disconnect()
+        end
+        noclipConnection = RunService.Stepped:Connect(function()
+            if not isNoclipActive then
+                noclipConnection:Disconnect()
+                return
+            end
+            local character = player.Character
+            if character then
+                for _, part in pairs(character:GetDescendants()) do
+                    if part:IsA("BasePart") and part.CanCollide then
+                        part.CanCollide = false
+                    end
+                end
+            end
+        end)
+        
+        return true
+    end
+    
+    local function disableNoclip()
+        local player = game.Players.LocalPlayer
+        if noclipConnection then
+            noclipConnection:Disconnect()
+            noclipConnection = nil
+        end
+        if player.Character then
+            for _, part in pairs(player.Character:GetDescendants()) do
+                if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+                    if part.Name == "Head" or part.Name:find("Torso") or part.Name:find("Arm") or part.Name:find("Leg") then
+                        part.CanCollide = false
+                    else
+                        part.CanCollide = true
+                    end
+                end
+            end
+            if player.Character:FindFirstChild("HumanoidRootPart") then
+                player.Character.HumanoidRootPart.CanCollide = false
+            end
+        end
+    end
+    
+    local function setupCharacterNoclip()
+        local player = game.Players.LocalPlayer
+        if player.Character and isNoclipActive then
+            wait(0.5)
+            enableNoclip()
+        end
+    end
+    
+    game.Players.LocalPlayer.CharacterAdded:Connect(setupCharacterNoclip)
+    
+    local noclipToggle = Tabs.Player:AddToggle("NoClip", {
+        Title = "No Clip",
+        Description = "Walk through walls",
+        Default = false,
+        Callback = function(Value)
+            isNoclipActive = Value
+            if Value then
+                enableNoclip()
+            else
+                disableNoclip()
+            end
+        end
+    })
+    local copycords = Tabs.Player:AddButton({
+        Title = "Copy Coords",
+        Description = "copy coords",
+        Callback = function()
+                    local player = game.Players.LocalPlayer
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            local pos = player.Character.HumanoidRootPart.CFrame
+            -- Format ke string
+            local coordsString = string.format(
+                "CFrame.new(%.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f, %.6f)",
+                pos:GetComponents()
+            )
+            setclipboard(coordsString)
+            Fluent:Notify({
+                Title = "Copied to clipboard",
+                Content = "copy coords!",
+                Duration = 2
+            })
+        end
+        end
+    })
+    local playerTab = Tabs.Player
+    local player = game.Players.LocalPlayer
+    local isGodMode = false
+    local healthConnection = nil
+
+    -- hapus FallDamage script kalau ada
+    local function removeFallDamageScript(char)
+        local fallScript = char:FindFirstChild("FallDamage")
+        if fallScript then
+            fallScript:Destroy()
+            warn("FallDamage script dihapus!")
+        end
+    end
+
+    -- loop disable touch damage
+    local function disableTouchLoop()
+        while isGodMode do
+            task.wait(0.3)
+            local char = player.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                local hrp = char.HumanoidRootPart
+                local parts = workspace:GetPartBoundsInRadius(hrp.Position, 20)
+                for _, part in ipairs(parts) do
+                    if part:IsA("BasePart") then
+                        part.CanTouch = false
+                    end
+                end
+            end
+        end
+    end
+
+    -- aktifkan God Mode
+    local function enableGodMode()
+        local char = player.Character or player.CharacterAdded:Wait()
+        local humanoid = char:WaitForChild("Humanoid")
+
+        -- hapus FallDamage script
+        removeFallDamageScript(char)
+
+        -- auto full HP
+        humanoid.Health = humanoid.MaxHealth
+        healthConnection = humanoid.HealthChanged:Connect(function()
+            if isGodMode and humanoid.Health < humanoid.MaxHealth then
+                humanoid.Health = humanoid.MaxHealth
+            end
+        end)
+
+        -- disable touch damage
+        task.spawn(disableTouchLoop)
+    end
+
+    -- nonaktifkan God Mode
+    local function disableGodMode()
+        if healthConnection then
+            healthConnection:Disconnect()
+            healthConnection = nil
+        end
+    end
+
+    -- Toggle UI
+    playerTab:AddToggle("GodMode", {
+        Title = "God Mode / No Damage",
+        Description = "Imun dari fall damage, touch damage, dan senjata",
+        Default = false,
+        Callback = function(Value)
+            isGodMode = Value
+            if Value then
+                enableGodMode()
+            else
+                disableGodMode()
+            end
+        end
+    })
+    player.CharacterAdded:Connect(function(char)
+        task.wait(1)
+        if isGodMode then
+            enableGodMode()
+        else
+            disableGodMode()
+        end
+    end)
+end
+-- Farm Tab
+do
+    -- Auto Tool Activate Variables
+    local isAutoClickActive = false
+    local autoClickConnection = nil
+    local clickDelay = 0.1
+    local RunService = game:GetService("RunService")
+    
+    -- Auto Bring NPC Variables
+    local isAutoBringActive = false
+    local autoBringConnection = nil
+    local bringRange = 50 -- Range to search for NPCs
+    local bringSpeed = 16 -- Speed of bringing NPCs
+    
+    -- Click Delay Slider
+    local ClickDelaySlider = Tabs.Farm:AddSlider("ClickDelaySlider", {
+        Title = "Click Delay",
+        Description = "Set delay between tool activations (seconds)",
+        Default = 0.1,
+        Min = 0.01,
+        Max = 5,
+        Rounding = 2,
+        Callback = function(Value)
+            clickDelay = Value
+        end
+    })
+    
+    -- Bring Range Slider
+    local BringRangeSlider = Tabs.Farm:AddSlider("BringRangeSlider", {
+        Title = "Bring Range",
+        Description = "Set range to search for NPCs/Zombies",
+        Default = 50,
+        Min = 10,
+        Max = 200,
+        Rounding = 1,
+        Callback = function(Value)
+            bringRange = Value
+        end
+    })
+    
+    -- Bring Speed Slider
+    local BringSpeedSlider = Tabs.Farm:AddSlider("BringSpeedSlider", {
+        Title = "Bring Speed",
+        Description = "Set speed of bringing NPCs to you",
+        Default = 16,
+        Min = 1,
+        Max = 50,
+        Rounding = 1,
+        Callback = function(Value)
+            bringSpeed = Value
+        end
+    })
+    
+    -- Auto Tool Activate Function
+    local function performToolActivate()
+        local player = game.Players.LocalPlayer
+        
+        if player.Character then
+            local tool = player.Character:FindFirstChildOfClass("Tool")
+            if tool then
+                tool:Activate()
+            end
+        end
+    end
+    
+    -- Find NPCs Function
+    local function findNearbyNPCs()
+        local player = game.Players.LocalPlayer
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            return {}
+        end
+        
+        local playerPosition = player.Character.HumanoidRootPart.Position
+        local nearbyNPCs = {}
+        
+        -- Search in workspace for NPCs/Zombies
+        for _, obj in pairs(workspace:GetChildren()) do
+            if obj:IsA("Model") and obj ~= player.Character then
+                -- Check if it's an NPC (has Humanoid and HumanoidRootPart)
+                local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                local rootPart = obj:FindFirstChild("HumanoidRootPart")
+                
+                if humanoid and rootPart then
+                    -- Check if it's not a player
+                    local isPlayer = false
+                    for _, plr in pairs(game.Players:GetPlayers()) do
+                        if plr.Character == obj then
+                            isPlayer = true
+                            break
+                        end
+                    end
+                    
+                    if not isPlayer then
+                        local distance = (rootPart.Position - playerPosition).Magnitude
+                        if distance <= bringRange then
+                            table.insert(nearbyNPCs, {model = obj, rootPart = rootPart, distance = distance})
+                        end
+                    end
+                end
+            end
+        end
+        
+        -- Also check in folders that might contain NPCs
+        for _, folder in pairs(workspace:GetChildren()) do
+            if folder:IsA("Folder") then
+                for _, obj in pairs(folder:GetChildren()) do
+                    if obj:IsA("Model") then
+                        local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                        local rootPart = obj:FindFirstChild("HumanoidRootPart")
+                        
+                        if humanoid and rootPart then
+                            local distance = (rootPart.Position - playerPosition).Magnitude
+                            if distance <= bringRange then
+                                table.insert(nearbyNPCs, {model = obj, rootPart = rootPart, distance = distance})
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        return nearbyNPCs
+    end
+    
+    -- Auto Bring NPC Function
+    local function performAutoBring()
+        local player = game.Players.LocalPlayer
+        if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then
+            return
+        end
+        
+        local playerPosition = player.Character.HumanoidRootPart.Position
+        local npcs = findNearbyNPCs()
+        
+        for _, npcData in pairs(npcs) do
+            local npc = npcData.model
+            local rootPart = npcData.rootPart
+            
+            if npc and npc.Parent and rootPart and rootPart.Parent then
+                -- Create or update BodyVelocity to bring NPC to player
+                local bodyVelocity = rootPart:FindFirstChild("AutoBringVelocity")
+                if not bodyVelocity then
+                    bodyVelocity = Instance.new("BodyVelocity")
+                    bodyVelocity.Name = "AutoBringVelocity"
+                    bodyVelocity.MaxForce = Vector3.new(4000, 4000, 4000)
+                    bodyVelocity.Parent = rootPart
+                end
+                
+                -- Calculate direction to player
+                local direction = (playerPosition - rootPart.Position).Unit
+                bodyVelocity.Velocity = direction * bringSpeed
+                
+                -- Stop NPC from walking away
+                local humanoid = npc:FindFirstChildOfClass("Humanoid")
+                if humanoid then
+                    humanoid.PlatformStand = true
+                    humanoid.WalkSpeed = 0
+                end
+            end
+        end
+    end
+    
+    -- Clean up BodyVelocities when disabled
+    local function cleanupBringEffects()
+        -- Clean from Entities/Zombie folder
+        local entitiesFolder = workspace:FindFirstChild("Entities")
+        if entitiesFolder then
+            local zombieFolder = entitiesFolder:FindFirstChild("Zombie")
+            if zombieFolder then
+                for _, zombie in pairs(zombieFolder:GetChildren()) do
+                    if zombie:IsA("Model") then
+                        local rootPart = zombie:FindFirstChild("HumanoidRootPart") or zombie:FindFirstChild("Torso") or zombie:FindFirstChild("LowerTorso")
+                        if rootPart then
+                            local bodyVelocity = rootPart:FindFirstChild("AutoBringVelocity")
+                            if bodyVelocity then
+                                bodyVelocity:Destroy()
+                            end
+                        end
+                        
+                        -- Reset humanoid
+                        local humanoid = zombie:FindFirstChildOfClass("Humanoid")
+                        if humanoid then
+                            pcall(function()
+                                humanoid.PlatformStand = false
+                                if humanoid.WalkSpeed == 0 then
+                                    humanoid.WalkSpeed = 16
+                                end
+                            end)
+                        end
+                    end
+                end
+            end
+            
+            -- Clean other entities
+            for _, obj in pairs(entitiesFolder:GetChildren()) do
+                if obj:IsA("Model") and obj.Name ~= "Zombie" then
+                    local rootPart = obj:FindFirstChild("HumanoidRootPart") or obj:FindFirstChild("Torso") or obj:FindFirstChild("LowerTorso")
+                    if rootPart then
+                        local bodyVelocity = rootPart:FindFirstChild("AutoBringVelocity")
+                        if bodyVelocity then
+                            bodyVelocity:Destroy()
+                        end
+                    end
+                    
+                    local humanoid = obj:FindFirstChildOfClass("Humanoid")
+                    if humanoid then
+                        pcall(function()
+                            humanoid.PlatformStand = false
+                            if humanoid.WalkSpeed == 0 then
+                                humanoid.WalkSpeed = 16
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+        
+        -- Fallback cleanup in workspace
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj.Name == "AutoBringVelocity" and obj:IsA("BodyVelocity") then
+                obj:Destroy()
+            end
+        end
+    end
+    
+    -- Auto Tool Activate Toggle
+    local AutoClickToggle = Tabs.Farm:AddToggle("AutoClickToggle", {
+        Title = "Auto Tool Activate",
+        Description = "Automatically activate equipped tool",
+        Default = false,
+        Callback = function(Value)
+            isAutoClickActive = Value
+            
+            if Value then
+                if autoClickConnection then
+                    autoClickConnection:Disconnect()
+                    autoClickConnection = nil
+                end
+                
+                local lastActivateTime = 0
+                autoClickConnection = RunService.Heartbeat:Connect(function()
+                    if not isAutoClickActive then
+                        if autoClickConnection then
+                            autoClickConnection:Disconnect()
+                            autoClickConnection = nil
+                        end
+                        return
+                    end
+                    
+                    local currentTime = tick()
+                    if currentTime - lastActivateTime >= clickDelay then
+                        performToolActivate()
+                        lastActivateTime = currentTime
+                    end
+                end)
+            else
+                isAutoClickActive = false
+                if autoClickConnection then
+                    autoClickConnection:Disconnect()
+                    autoClickConnection = nil
+                end
+            end
+        end
+    })
+    
+    -- Auto Bring NPC Toggle
+    local AutoBringToggle = Tabs.Farm:AddToggle("AutoBringToggle", {
+        Title = "Auto Bring NPC",
+        Description = "Automatically bring nearby NPCs/Zombies to you",
+        Default = false,
+        Callback = function(Value)
+            isAutoBringActive = Value
+            
+            if Value then
+                if autoBringConnection then
+                    autoBringConnection:Disconnect()
+                    autoBringConnection = nil
+                end
+                
+                autoBringConnection = RunService.Heartbeat:Connect(function()
+                    if not isAutoBringActive then
+                        if autoBringConnection then
+                            autoBringConnection:Disconnect()
+                            autoBringConnection = nil
+                        end
+                        return
+                    end
+                    
+                    performAutoBring()
+                end)
+            else
+                isAutoBringActive = false
+                if autoBringConnection then
+                    autoBringConnection:Disconnect()
+                    autoBringConnection = nil
+                end
+                cleanupBringEffects()
+            end
+        end
+    })
+    
+    -- NPC Counter Display
+    spawn(function()
+        while true do
+            if isAutoBringActive then
+                local npcCount = #findNearbyNPCs()
+                -- You can add notification or update UI here if needed
+            end
+            wait(1)
+        end
+    end)
+    
+    -- Info text for Farm tab
+    Tabs.Farm:AddParagraph({
+        Title = "Auto Farming Features",
+        Content = "Auto Tool Activate: Automatically activates equipped tools (weapons, etc.)\n\nAuto Bring NPC: Brings all nearby NPCs/Zombies to your location for easy farming. They will be pulled towards you and unable to move away."
+    })
+    
+    -- Usage Instructions
+    Tabs.Farm:AddParagraph({
+        Title = "How to Use",
+        Content = "Auto Tool:\n1. Equip your weapon/tool\n2. Set click delay\n3. Toggle Auto Tool Activate\n\nAuto Bring:\n1. Set bring range (how far to search)\n2. Set bring speed (how fast NPCs move to you)\n3. Toggle Auto Bring NPC\n4. NPCs will be pulled to your location automatically!"
+    })
+    
+    -- Warning
+    Tabs.Farm:AddParagraph({
+        Title = "⚠️ Important Notes",
+        Content = "• Auto Bring works on NPCs/Zombies, not players\n• NPCs will be frozen and pulled to you\n• Use reasonable range to avoid lag\n• Disable before teleporting to avoid issues\n• Works best in open areas"
+    })
+end
+Window:SelectTab(1)
+AutoConfig:Initialize(Fluent)
