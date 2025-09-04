@@ -909,7 +909,7 @@ do
                     end
                 end)
                 
-                print("✅ [DEBUG] Auto tool activation connection established")
+                print("✅ [sdaasdas")
             else
                 print("⏹️ [DEBUG] Stopping auto tool activation")
                 isAutoClickActive = false
