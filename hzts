@@ -969,13 +969,13 @@ do
     -- Usage Instructions
     Tabs.Farm:AddParagraph({
         Title = "How to Use",
-        Content = "Auto Tool:\n1. Equip your weapon/tool\n2. Set click delay\n3. Toggle Auto Tool Activate\n\nAuto Bring:\n1. Set bring range (how far to search)\n2. Set bring speed (how fast NPCs move to you)\n3. Toggle Auto Bring NPC\n4. NPCs will be pulled to your location automatically!"
+        Content = "Auto Tool:\n1. Equip your weapon/tool\n2. Set click delay\n3. Toggle Auto Tool Activate\n\nAuto Bring:\n1. Set bring range (search distance for zombie parts)\n2. Set bring speed (teleportation frequency)\n3. Toggle Auto Bring NPC\n4. All zombie parts with EntityTeam='Zombie' will be teleported to you!"
     })
     
     -- Warning
     Tabs.Farm:AddParagraph({
         Title = "⚠️ Important Notes",
-        Content = "• Auto Bring works on NPCs/Zombies, not players\n• NPCs will be frozen and pulled to you\n• Use reasonable range to avoid lag\n• Disable before teleporting to avoid issues\n• Works best in open areas"
+        Content = "• Auto Bring works on Parts with EntityTeam='Zombie' attribute\n• NPCs are teleported directly to your area using CFrame\n• Uses multiple teleportation methods for reliability\n• Parts will be positioned randomly around you (3-8 studs)\n• Works with CamRigWithLetterBox folder structure"
     })
 end
 Window:SelectTab(1)
