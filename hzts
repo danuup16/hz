@@ -803,46 +803,53 @@ do
     end
     
     -- Function to create position key from CFrame
-    local function createPositionKey(cframe)
-        local x, y, z = cframe.X, cframe.Y, cframe.Z
-        -- Round to nearest integer to handle floating point precision
-        return math.floor(x + 0.5) .. "," .. math.floor(y + 0.5) .. "," .. math.floor(z + 0.5)
-    end
-    
-    -- Function to check if position already visited
+local function createPositionKey(cframe)
+    if not cframe then return "0,0,0" end
+    local x, y, z = cframe.X or 0, cframe.Y or 0, cframe.Z or 0
+    -- Ensure all values are numbers and handle edge cases
+    x = tonumber(x) or 0
+    y = tonumber(y) or 0
+    z = tonumber(z) or 0
+    -- Round to nearest integer to handle floating point precision
+    return tostring(math.floor(x + 0.5)) .. "," .. tostring(math.floor(y + 0.5)) .. "," .. tostring(math.floor(z + 0.5))
+end
     local function isPositionVisited(cframe)
-        local newKey = createPositionKey(cframe)
-        
-        -- Check if exact position already visited
-        if visitedPositions[newKey] then
-            return true
-        end
-        
-        -- Check if any nearby position was visited (within tolerance)
-        for visitedKey, _ in pairs(visitedPositions) do
-            local coords = {}
-            for coord in visitedKey:gmatch("([^,]+)") do
-                table.insert(coords, tonumber(coord))
-            end
-            
-            if #coords == 3 then
-                local visitedPos = Vector3.new(coords[1], coords[2], coords[3])
-                local currentPos = Vector3.new(cframe.X, cframe.Y, cframe.Z)
-                local distance = (visitedPos - currentPos).Magnitude
-                
-                if distance <= positionTolerance then
-                    return true
-                end
-            end
-        end
-        
-        return false
+    if not cframe then return false end
+    
+    local newKey = createPositionKey(cframe)
+    
+    -- Check if exact position already visited
+    if visitedPositions[newKey] then
+        return true
     end
     
-    -- Find All HallwayDoor Root Parts and Sort by Distance (CFrame-based)
-    -- Fix for the type comparison error in performFarm1Teleport function
-
--- Replace the findAndSortHallwayDoors function with this version that ensures type safety:
+    -- Check if any nearby position was visited (within tolerance)
+    for visitedKey, _ in pairs(visitedPositions) do
+        local coords = {}
+        for coord in visitedKey:gmatch("([^,]+)") do
+            local num = tonumber(coord)
+            if num then
+                table.insert(coords, num)
+            end
+        end
+        
+        if #coords == 3 then
+            local visitedPos = Vector3.new(coords[1], coords[2], coords[3])
+            local currentPos = Vector3.new(
+                tonumber(cframe.X) or 0, 
+                tonumber(cframe.Y) or 0, 
+                tonumber(cframe.Z) or 0
+            )
+            local distance = (visitedPos - currentPos).Magnitude
+            
+            if tonumber(distance) and tonumber(distance) <= tonumber(positionTolerance) then
+                return true
+            end
+        end
+    end
+    
+    return false
+end
 local function findAndSortHallwayDoors()
     local doorRoots = {}
     local player = game.Players.LocalPlayer
@@ -862,25 +869,32 @@ local function findAndSortHallwayDoors()
             for _, obj in pairs(doors:GetChildren()) do
                 if obj.Name:match("HallwayDoor") and obj:IsA("Model") then
                     local root = obj:FindFirstChild("Root")
-                    if root and root:IsA("BasePart") then
-                        -- Ensure distance is always a number
-                        local distance = tonumber((root.Position - playerPosition).Magnitude) or 0
+                    if root and root:IsA("BasePart") and root.Position then
+                        -- Extra safety for mobile - wrap in pcall
+                        local success, distance = pcall(function()
+                            local dist = (root.Position - playerPosition).Magnitude
+                            return tonumber(dist) or 0
+                        end)
+                        
+                        if not success then
+                            distance = 0
+                        end
+                        
                         local positionKey = createPositionKey(root.CFrame)
                         local visited = isPositionVisited(root.CFrame)
                         
                         table.insert(doorRoots, {
-                            name = obj.Name .. "_" .. doorCount,
+                            name = tostring(obj.Name) .. "_" .. tostring(doorCount),
                             root = root,
                             position = root.Position,
                             cframe = root.CFrame,
-                            distance = distance, -- Guaranteed to be a number
-                            positionKey = positionKey,
-                            visited = visited
+                            distance = tonumber(distance) or 0, -- Force to number
+                            positionKey = tostring(positionKey), -- Force to string
+                            visited = visited == true -- Force to boolean
                         })
                         
                         print("Found HallwayDoor #" .. doorCount .. ":", obj.Name, 
-                              "at position:", math.floor(root.Position.X), math.floor(root.Position.Y), math.floor(root.Position.Z), 
-                              "distance:", math.floor(distance), 
+                              "distance:", math.floor(tonumber(distance) or 0), 
                               "visited:", visited and "YES" or "NO")
                         
                         doorCount = doorCount + 1
@@ -894,31 +908,27 @@ local function findAndSortHallwayDoors()
         print("School folder not found in workspace")
     end
     
-    -- Sort doors by distance with type checking
+    -- Mobile-safe sorting with explicit type checking
     table.sort(doorRoots, function(a, b)
-        -- Ensure both distances are numbers before comparing
-        local distA = tonumber(a.distance) or 0
-        local distB = tonumber(b.distance) or 0
+        -- Convert to numbers with fallbacks
+        local distA = tonumber(a.distance)
+        local distB = tonumber(b.distance)
+        
+        -- If conversion fails, treat as 0
+        if not distA then distA = 0 end
+        if not distB then distB = 0 end
+        
+        -- Now we're guaranteed to compare number < number
         return distA < distB
     end)
     
     print("Total HallwayDoors found and sorted:", #doorRoots)
     
-    -- Print sorted order with better debugging
-    for i, door in ipairs(doorRoots) do
-        local visitedStatus = door.visited and "VISITED" or "NOT VISITED"
-        local safeDistance = tonumber(door.distance) or 0
-        print("Door " .. i .. ":", door.name, "distance:", math.floor(safeDistance), 
-              "pos:", door.positionKey, visitedStatus)
-    end
-    
     return doorRoots
 end
-
--- Also update the performFarm1Teleport function with better type safety:
 local function performFarm1Teleport()
     local currentTime = tick()
-    if currentTime - lastFarm1Time < farm1Delay then
+    if tonumber(currentTime - lastFarm1Time) < tonumber(farm1Delay) then
         return
     end
     
@@ -930,28 +940,31 @@ local function performFarm1Teleport()
     -- Get all doors with updated visit status
     local allDoors = findAndSortHallwayDoors()
     
-    if #allDoors == 0 then
+    local doorCount = tonumber(#allDoors) or 0
+    if doorCount == 0 then
         print("No doors found!")
         return
     end
     
-    -- Count visited doors properly with type safety
+    -- Count visited doors with explicit type safety
     local visitedCount = 0
     local unvisitedDoors = {}
     
-    for _, door in ipairs(allDoors) do
-        if door.visited == true then -- explicit boolean check
+    for i = 1, doorCount do
+        local door = allDoors[i]
+        if door and door.visited == true then
             visitedCount = visitedCount + 1
-        else
+        elseif door then
             table.insert(unvisitedDoors, door)
         end
     end
     
-    -- Ensure we're comparing numbers
-    local totalDoors = tonumber(#allDoors) or 0
+    -- Force all values to be numbers before comparison
+    local totalDoors = tonumber(doorCount) or 0
     local visitedNum = tonumber(visitedCount) or 0
     
-    if visitedNum >= totalDoors then
+    -- The critical comparison - ensure both sides are definitely numbers
+    if visitedNum >= totalDoors and totalDoors > 0 then
         if farm1Connection then
             farm1Connection:Disconnect()
             farm1Connection = nil
@@ -968,36 +981,50 @@ local function performFarm1Teleport()
         end
         Fluent:Notify({
             Title = "Farm 1 Complete - Auto Transition",
-            Content = "All " .. totalDoors .. " doors visited! Farm 1 toggle stays ON. Auto farming enabled.",
+            Content = "All " .. tostring(totalDoors) .. " doors visited! Farm 1 toggle stays ON. Auto farming enabled.",
             Duration = 5
         })
         return
     end
     
-    local targetDoor = unvisitedDoors[1]
-    if not targetDoor then
+    if #unvisitedDoors == 0 then
         return
     end
     
+    local targetDoor = unvisitedDoors[1]
+    if not targetDoor or not targetDoor.cframe then
+        return
+    end
+    
+    -- Find door index safely
     local doorIndex = 1
-    for i, door in ipairs(allDoors) do
-        if door.positionKey == targetDoor.positionKey then
+    for i = 1, totalDoors do
+        local door = allDoors[i]
+        if door and door.positionKey == targetDoor.positionKey then
             doorIndex = i
             break
         end
     end
     
-    pcall(function()
-        player.Character.HumanoidRootPart.CFrame = targetDoor.cframe
-        visitedPositions[targetDoor.positionKey] = true
-        local newVisitedCount = visitedNum + 1
-        local remaining = totalDoors - newVisitedCount
-        Fluent:Notify({
-            Title = "Farm 1 Progress",
-            Content = "Door " .. doorIndex .. "/" .. totalDoors .. " completed. " .. remaining .. " remaining.",
-            Duration = 2
-        })
+    -- Safe teleportation
+    local success = pcall(function()
+        if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+            player.Character.HumanoidRootPart.CFrame = targetDoor.cframe
+            visitedPositions[targetDoor.positionKey] = true
+            local newVisitedCount = visitedNum + 1
+            local remaining = math.max(0, totalDoors - newVisitedCount)
+            
+            Fluent:Notify({
+                Title = "Farm 1 Progress",
+                Content = "Door " .. tostring(doorIndex) .. "/" .. tostring(totalDoors) .. " completed. " .. tostring(remaining) .. " remaining.",
+                Duration = 2
+            })
+        end
     end)
+    
+    if not success then
+        print("Failed to teleport to door")
+    end
     
     lastFarm1Time = currentTime
 end
@@ -1050,7 +1077,7 @@ end
             isFarm1Active = Value
             
             if Value then
-                print("Starting Farm 1 - Door Teleport with Auto Transition")
+                print("awdadawdwa")
                 
                 -- Reset all state for new session
                 visitedPositions = {}
