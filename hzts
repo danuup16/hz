@@ -988,19 +988,19 @@ do
     -- Info text for Farm tab
     Tabs.Farm:AddParagraph({
         Title = "Auto Farming Features",
-        Content = "Auto Tool Activate: Automatically activates equipped tools (weapons, etc.)\n\nAuto Bring NPC: Brings all nearby NPCs/Zombies to your location for easy farming. They will be pulled towards you and unable to move away."
+        Content = "Auto Tool Activate: Automatically activates equipped tools (weapons, etc.)\n\nAuto Teleport to Zombie: Teleports player to the nearest zombie location based on their changing CFrame positions."
     })
     
     -- Usage Instructions
     Tabs.Farm:AddParagraph({
         Title = "How to Use",
-        Content = "Auto Tool:\n1. Equip your weapon/tool\n2. Set click delay\n3. Toggle Auto Tool Activate\n\nAuto Bring:\n1. Set bring range (search distance for zombie parts)\n2. Set bring speed (teleportation frequency)\n3. Toggle Auto Bring NPC\n4. All zombie parts with EntityTeam='Zombie' will be teleported to you!"
+        Content = "Auto Tool:\n1. Equip your weapon/tool\n2. Set click delay\n3. Toggle Auto Tool Activate\n\nAuto Teleport:\n1. Set teleport range (search distance)\n2. Set teleport delay (cooldown between teleports)\n3. Toggle Auto Teleport to Zombie\n4. You will be teleported to nearest zombie automatically!"
     })
     
     -- Warning
     Tabs.Farm:AddParagraph({
         Title = "⚠️ Important Notes",
-        Content = "• Auto Bring works on Parts with EntityTeam='Zombie' attribute\n• NPCs are teleported directly to your area using CFrame\n• Uses multiple teleportation methods for reliability\n• Parts will be positioned randomly around you (3-8 studs)\n• Works with CamRigWithLetterBox folder structure"
+        Content = "• Auto Teleport follows zombie CFrame changes in real-time\n• Player teleports to zombie location (not zombie to player)\n• Uses delay to prevent teleport spam\n• Targets closest zombie with EntityTeam='Zombie'\n• CFrame tracking updates constantly"
     })
 end
 Window:SelectTab(1)
