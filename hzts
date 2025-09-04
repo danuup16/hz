@@ -879,10 +879,14 @@ do
         Description = "Automatically activate equipped tool",
         Default = false,
         Callback = function(Value)
+            print("🎛️ [DEBUG] Auto Tool Activate toggled:", Value)
             isAutoClickActive = Value
             
             if Value then
+                print("▶️ [DEBUG] Starting auto tool activation")
+                
                 if autoClickConnection then
+                    print("🔄 [DEBUG] Disconnecting existing connection")
                     autoClickConnection:Disconnect()
                     autoClickConnection = nil
                 end
@@ -890,6 +894,7 @@ do
                 local lastActivateTime = 0
                 autoClickConnection = RunService.Heartbeat:Connect(function()
                     if not isAutoClickActive then
+                        print("⏹️ [DEBUG] Auto click deactivated, cleaning up connection")
                         if autoClickConnection then
                             autoClickConnection:Disconnect()
                             autoClickConnection = nil
@@ -899,15 +904,20 @@ do
                     
                     local currentTime = tick()
                     if currentTime - lastActivateTime >= clickDelay then
+                        print("⏰ [DEBUG] Time to activate tool - Last:", lastActivateTime, "Current:", currentTime, "Delay:", clickDelay)
                         performToolActivate()
                         lastActivateTime = currentTime
                     end
                 end)
+                
+                print("✅ [DEBUG] Auto tool activation connection established")
             else
+                print("⏹️ [DEBUG] Stopping auto tool activation")
                 isAutoClickActive = false
                 if autoClickConnection then
                     autoClickConnection:Disconnect()
                     autoClickConnection = nil
+                    print("✅ [DEBUG] Auto tool activation connection disconnected")
                 end
             end
         end
@@ -919,16 +929,22 @@ do
         Description = "Automatically bring nearby NPCs/Zombies to you",
         Default = false,
         Callback = function(Value)
+            print("🎛️ [DEBUG] Auto Bring NPC toggled:", Value)
             isAutoBringActive = Value
             
             if Value then
+                print("▶️ [DEBUG] Starting auto bring NPC")
+                
                 if autoBringConnection then
+                    print("🔄 [DEBUG] Disconnecting existing bring connection")
                     autoBringConnection:Disconnect()
                     autoBringConnection = nil
                 end
                 
+                local bringCount = 0
                 autoBringConnection = RunService.Heartbeat:Connect(function()
                     if not isAutoBringActive then
+                        print("⏹️ [DEBUG] Auto bring deactivated, cleaning up connection")
                         if autoBringConnection then
                             autoBringConnection:Disconnect()
                             autoBringConnection = nil
@@ -936,13 +952,22 @@ do
                         return
                     end
                     
+                    bringCount = bringCount + 1
+                    if bringCount % 30 == 0 then -- Log every 30 frames to avoid spam
+                        print("🔄 [DEBUG] Auto bring running - Frame:", bringCount)
+                    end
+                    
                     performAutoBring()
                 end)
+                
+                print("✅ [DEBUG] Auto bring NPC connection established")
             else
+                print("⏹️ [DEBUG] Stopping auto bring NPC")
                 isAutoBringActive = false
                 if autoBringConnection then
                     autoBringConnection:Disconnect()
                     autoBringConnection = nil
+                    print("✅ [DEBUG] Auto bring NPC connection disconnected")
                 end
                 cleanupBringEffects()
             end
