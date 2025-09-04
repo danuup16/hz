@@ -904,7 +904,6 @@ do
                     
                     local currentTime = tick()
                     if currentTime - lastActivateTime >= clickDelay then
-                        print("⏰ [DEBUG] Time to activate tool - Last:", lastActivateTime, "Current:", currentTime, "Delay:", clickDelay)
                         performToolActivate()
                         lastActivateTime = currentTime
                     end
